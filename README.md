@@ -15,6 +15,6 @@ Os dados são lidos direto pelo navegador, então basta abrir o `index.html`:
 - **GitHub Pages:** Settings → Pages → Deploy from branch → `main` / root. O painel fica em `https://<usuario>.github.io/painel_tse/`.
 - **Local:** baixe o arquivo e abra no navegador.
 
-O código da eleição é descoberto automaticamente no índice do TSE (`/oficial/comum/config/ele-c.json`). Se não encontrar, informe o código na própria página ou pela URL: `index.html?ele=620`.
+O painel usa o código de eleição `6258` (2º turno de 2026). Para usar outro, informe na própria página ou pela URL: `index.html?ele=6258`.
 
 `index.html?demo` mostra dados simulados, apenas para testar o visual.

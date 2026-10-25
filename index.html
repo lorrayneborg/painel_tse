@@ -178,7 +178,7 @@ code { font-family: var(--font-mono); font-size: .92em; }
     <p id="notice-text"></p>
     <div class="row">
       <label for="ele-code">Código da eleição no TSE:</label>
-      <input id="ele-code" inputmode="numeric" placeholder="ex. 620">
+      <input id="ele-code" inputmode="numeric" placeholder="ex. 6258">
       <button type="button" class="btn" id="ele-apply">Usar este código</button>
       <button type="button" class="btn" id="demo-btn">Ver com dados simulados</button>
     </div>
@@ -220,6 +220,7 @@ code { font-family: var(--font-mono); font-size: .92em; }
 (() => {
   const BASE = "https://resultados.tse.jus.br/oficial";
   const YEAR = 2026;
+  const DEFAULT_ELE = "6258"; // código do 2º turno de 2026 no TSE
   const UFS = {
     ac:"Acre", al:"Alagoas", ap:"Amapá", am:"Amazonas", ba:"Bahia", ce:"Ceará", df:"Distrito Federal",
     es:"Espírito Santo", go:"Goiás", ma:"Maranhão", mt:"Mato Grosso", ms:"Mato Grosso do Sul",
@@ -344,7 +345,7 @@ code { font-family: var(--font-mono); font-size: .92em; }
       } else {
         if (!state.ele) {
           const manual = new URLSearchParams(location.search).get("ele") || store.get("tse-ele");
-          state.ele = manual || await discover();
+          state.ele = manual || DEFAULT_ELE || await discover();
           if (!state.ele) throw Object.assign(new Error("nocode"), { kind: "nocode" });
         }
         const ufs = state.cargo === "0001" ? ["br", ...Object.keys(UFS)] : Object.keys(UFS).filter(u => u !== "zz");
