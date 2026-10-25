@@ -251,25 +251,60 @@ code { font-family: var(--font-mono); font-size: .92em; }
   };
 
   // ---------- formatação ----------
-  const num = v => { if (v == null || v === "") return NaN; return Number(String(v).replace(/\./g, "").replace(",", ".")); };
+  const num = v => {
+    if (v == null || v === "") return NaN;
+    if (typeof v === "number") return v;
+    return Number(String(v).replace(/\./g, "").replace(",", "."));
+  };
   const fmtInt = n => isFinite(n) ? n.toLocaleString("pt-BR") : "—";
   const fmtPct = (n, d = 2) => isFinite(n) ? n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d }) + "%" : "—";
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
   const pad = (code, n) => String(code).padStart(n, "0");
 
-  // ---------- leitura do JSON simplificado do TSE ----------
+  // ---------- leitura do JSON do TSE ----------
+  // O formato mudou entre eleições (campos no topo ou aninhados em "abr", "s", "e", "v"),
+  // então cada valor é procurado pelo primeiro campo escalar com um dos nomes aceitos.
+  function scalars(raw) {
+    const out = {};
+    (function walk(o) {
+      if (!o || typeof o !== "object") return;
+      for (const [k, v] of Object.entries(o)) {
+        if (k === "cand") continue;
+        if (v && typeof v === "object") walk(v);
+        else if (!(k in out)) out[k] = v;
+      }
+    })(raw);
+    return out;
+  }
+  function findCands(o) {
+    if (!o || typeof o !== "object") return null;
+    if (Array.isArray(o.cand)) return o.cand;
+    for (const v of Object.values(o)) { const r = findCands(v); if (r) return r; }
+    return null;
+  }
   function parse(raw) {
-    const cands = (raw.cand || []).map(c => ({
-      n: c.n, nm: c.nmu || c.nm, party: c.cc || "", votes: num(c.vap), pct: num(c.pvap),
-      elected: c.e === "s" || /eleito/i.test(c.st || "") && !/não/i.test(c.st || "")
-    })).sort((x, y) => Number(x.n) - Number(y.n));
+    const f = scalars(raw);
+    const g = (...keys) => { for (const k of keys) if (f[k] != null && f[k] !== "") return f[k]; };
+    const cands = (findCands(raw) || []).map(c => {
+      const n = c.n ?? c.nr ?? c.numero;
+      const st = String(c.st ?? c.dsit ?? "");
+      return {
+        n, nm: c.nmu || c.nm || c.nmc || `Candidato ${n}`, party: c.cc || c.sgp || c.nmp || "",
+        votes: num(c.vap ?? c.v ?? c.qtv), pct: num(c.pvap ?? c.pv ?? c.pvv),
+        elected: c.e === "s" || (/eleito/i.test(st) && !/não/i.test(st))
+      };
+    }).sort((x, y) => Number(x.n) - Number(y.n));
+    // Sem percentual no arquivo: calcula sobre o total de votos dos candidatos
+    const totalC = cands.reduce((a, c) => a + (isFinite(c.votes) ? c.votes : 0), 0);
+    cands.forEach(c => { if (!isFinite(c.pct) && totalC) c.pct = c.votes / totalC * 100; });
     return {
-      dt: raw.dg || raw.dt, ht: raw.hg || raw.ht,
-      pst: num(raw.pst), s: num(raw.s), st: num(raw.st),
-      eleitores: num(raw.e), comp: num(raw.c), pcomp: num(raw.pc), abst: num(raw.a), pabst: num(raw.pa),
-      validos: num(raw.vv ?? raw.vvc ?? raw.vnom), brancos: num(raw.vb), pbrancos: num(raw.pvb),
-      nulos: num(raw.tvn ?? raw.vn), pnulos: num(raw.ptvn ?? raw.pvn),
-      final: raw.md === "e" || raw.tf === "s",
+      dt: g("dg", "dt", "dtt"), ht: g("hg", "ht", "htt"),
+      pst: num(g("pst", "psa")), s: num(g("s", "ts")), st: num(g("st", "sa")),
+      eleitores: num(g("te", "e", "tel")), comp: num(g("c", "tc")), pcomp: num(g("pc", "ptc")),
+      abst: num(g("a", "ta")), pabst: num(g("pa", "pta")),
+      validos: num(g("vv", "vvc", "vnom", "tvv")), brancos: num(g("vb", "tvb")), pbrancos: num(g("pvb", "ptvb")),
+      nulos: num(g("tvn", "vn")), pnulos: num(g("ptvn", "pvn")),
+      final: g("md") === "e" || g("tf") === "s",
       cands
     };
   }
@@ -297,7 +332,10 @@ code { font-family: var(--font-mono); font-size: .92em; }
     return pick ? String(Number(pick.cd)) : null;
   }
 
-  const urlFor = uf => `${BASE}/ele${YEAR}/${state.ele}/dados-simplificados/${uf}/${uf}-c${state.cargo}-e${pad(state.ele, 6)}-r.json`;
+  // Formato de 2026: /dados/<uf>/<uf>-c<cargo>-e<eleição>-u.json; o de eleições anteriores fica como reserva
+  const urlFor = uf => `${BASE}/ele${YEAR}/${state.ele}/dados/${uf}/${uf}-c${state.cargo}-e${pad(state.ele, 6)}-u.json`;
+  const urlOld = uf => `${BASE}/ele${YEAR}/${state.ele}/dados-simplificados/${uf}/${uf}-c${state.cargo}-e${pad(state.ele, 6)}-r.json`;
+  const fetchUF = uf => getJSON(urlFor(uf)).catch(e => getJSON(urlOld(uf)).catch(() => { throw e; }));
 
   // ---------- dados simulados (apenas para teste visual) ----------
   function demoData() {
@@ -349,7 +387,7 @@ code { font-family: var(--font-mono); font-size: .92em; }
           if (!state.ele) throw Object.assign(new Error("nocode"), { kind: "nocode" });
         }
         const ufs = state.cargo === "0001" ? ["br", ...Object.keys(UFS)] : Object.keys(UFS).filter(u => u !== "zz");
-        const results = await Promise.allSettled(ufs.map(uf => getJSON(urlFor(uf)).then(j => [uf, parse(j)])));
+        const results = await Promise.allSettled(ufs.map(uf => fetchUF(uf).then(j => [uf, parse(j)])));
         const ok = results.filter(r => r.status === "fulfilled").map(r => r.value);
         if (!ok.length) {
           const err = results[0].reason;
